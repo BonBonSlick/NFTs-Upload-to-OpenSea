@@ -6,230 +6,266 @@ import os
 import sys
 import pickle
 import time
+import datetime
+import string, random
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support import expected_conditions as ExpectedConditions
 from selenium.webdriver.support.ui import Select
+from selenium.webdriver.chrome.service import Service
 
-root = Tk()
-root.geometry('500x400')
-root.title("NFTs Upload to OpenSea  ")
-input_save_list = ["NFTs folder :", 0, 0, 0, 0, 0, 0, 0, 0]
-main_directory = os.path.join(sys.path[0])
-is_polygon = BooleanVar()
-is_polygon.set(False)
+def randomStringOfLength(length = 32):
+   return ''.join(random.choice(string.hexdigits) for char in range(length))
 
-def open_chrome_profile():
+def removeFile(fileNamePath):
+      if os.path.exists(fileNamePath):
+            print('Removing File! ', fileNamePath)
+            os.remove(fileNamePath)
+
+def writeLog(Error):
+    print('=======================')
+    print('=======================')
+    print('=======================')
+    print('======================= EXCEPTION =======================')
+    print('=======================')
+    print('=======================')
+    print('=======================')
+    log = open("log.txt", "a")
+    log.write('EXCEPTION! ' +
+              '[' + datetime.datetime.now().strftime("%Y-%m-%d %H:%M") + '] : '
+              + str(Error)
+              )
+    log.close()
+
+
+rootWindow = Tk()
+rootWindow.geometry('500x400')
+rootWindow.title("NFTs Upload to OpenSea  ")
+inputNFTFolder = ["NFTs folder :", 0, 0, 0, 0, 0, 0, 0, 0]
+pathScriptFile = sys.path[0]
+pathMainDir = os.path.join(pathScriptFile)
+
+def openChromeProfile():
     subprocess.Popen(
         [
             "start",
             "chrome",
             "--remote-debugging-port=8989",
-            "--user-data-dir=" + main_directory + "/chrome_profile",
+            "--user-data-dir=" + pathMainDir + "/chrome_profile",
         ],
         shell=True,
     )
 
-def save_file_path():
-    return os.path.join(sys.path[0], "Save_file.cloud") 
+def saveFormFilePath():
+    return os.path.join(pathScriptFile, "saved_form_inputs.cloud")
 
 # ask for directory on clicking button, changes button name.
-def upload_folder_input():
-    global upload_path
-    upload_path = filedialog.askdirectory()
-    Name_change_img_folder_button(upload_path)
+def absoluteFilePaths(sortByDate = True):
+    paths = []
+    for root, dirs, files in os.walk(os.path.abspath(pathNFTFolder)):
+        for file in files:
+            paths.append(os.path.join(root, file))
 
-def Name_change_img_folder_button(upload_folder_input):
+    if True == sortByDate:
+        paths.sort(key=os.path.getctime)
+    
+    return paths
+
+def initNFTFolderPath():
+    global pathNFTFolder
+    pathNFTFolder = filedialog.askdirectory()
+    updateNFTFolderPath(pathNFTFolder)
+
+
+def updateNFTFolderPath(upload_folder_input):
     upload_folder_input_button["text"] = upload_folder_input
 
+
 class InputField:
-    def __init__(self, label, row_io, column_io, pos, master=root):
+    def __init__(self, label, row_io, column_io, pos, master=rootWindow):
         self.master = master
         self.input_field = Entry(self.master)
         self.input_field.label = Label(master, text=label)
         self.input_field.label.grid(row=row_io, column=column_io)
         self.input_field.grid(row=row_io, column=column_io + 1)
         try:
-            with open(save_file_path(), "rb") as infile:
+            with open(saveFormFilePath(), "rb") as infile:
                 new_dict = pickle.load(infile)
-                self.insert_text(new_dict[pos])
+                self.updateInput(new_dict[pos])
         except FileNotFoundError:
             pass
 
-    def insert_text(self, text):
+    def updateInput(self, text):
         self.input_field.delete(0, "end")
         self.input_field.insert(0, text)
 
-    def save_inputs(self, pos):
-        input_save_list.insert(pos, self.input_field.get())
-        with open(save_file_path(), "wb") as outfile:
-            pickle.dump(input_save_list, outfile)
+    def saveInput(self, pos):
+        inputNFTFolder.insert(pos, self.input_field.get())
+        with open(saveFormFilePath(), "wb") as outfile:
+            pickle.dump(inputNFTFolder, outfile)
+
 
 ###input objects###
-collection_link_input = InputField("OpenSea Collection Link:", 2, 0, 1)
-start_num_input = InputField("Start Number:", 3, 0, 2)
-end_num_input = InputField("End Number:", 4, 0, 3)
-price = InputField("Price:", 5, 0, 4)
-title = InputField("Title:", 6, 0, 5)
-description = InputField("Description:", 7, 0, 6)
-file_format = InputField("NFT Image Format:", 8, 0, 7)
-external_link = InputField("External link:", 9, 0, 8)
-
+collection_link_input = InputField("OpenSea Collection Link (required):", 2, 0, 1)
+price = InputField("Price (default 0.00095):", 3, 0, 4)
+description = InputField("Description (optional):", 5, 0, 6)
+external_link = InputField("External link (optional):", 6, 0, 8)
 
 ###save inputs###
+
 def save():
-    input_save_list.insert(0, upload_path)
-    collection_link_input.save_inputs(1)
-    start_num_input.save_inputs(2)
-    end_num_input.save_inputs(3)
-    price.save_inputs(4)
-    title.save_inputs(5)
-    description.save_inputs(6)
-    file_format.save_inputs(7)
-    external_link.save_inputs(8)
-   
+    inputNFTFolder.insert(0, pathNFTFolder)
+    collection_link_input.saveInput(1)
+    price.saveInput(4)
+    description.saveInput(6)
+    external_link.saveInput(8)
+
 
 # _____MAIN_CODE_____
-def main_program_loop():
-    ###START###
-    project_path = main_directory
-    file_path = upload_path
-    collection_link = collection_link_input.input_field.get()
-    start_num = int(start_num_input.input_field.get())
-    end_num = int(end_num_input.input_field.get())
-    loop_price = float(price.input_field.get())
-    loop_title = title.input_field.get()
-    loop_file_format = file_format.input_field.get()
-    loop_external_link = str(external_link.input_field.get())
-    loop_description = description.input_field.get()
+def main():
+    try:
+    
+        print('=======================')
+        print('======================= Uploading process started...')
+        print('=======================')
+        print('=======================')
+        print('======================= WARNING uploaded NFT files will be REMOVED from local device after it was uploaded!')
+        print('=======================')
+        ###START###
+        collectionLink = str(collection_link_input.input_field.get()) or ''
+        loopPrice = float(price.input_field.get()) or 0.00095
+        loopExternalLink = str(external_link.input_field.get()) or ''
+        loopDdescription = str(description.input_field.get()) or ''
 
-    ##chromeoptions
-    opt = Options()
-    opt.add_experimental_option("debuggerAddress", "localhost:8989")
-    driver = webdriver.Chrome(
-        executable_path=project_path + "/chromedriver.exe",
-        chrome_options=opt,
-    )
-    wait = WebDriverWait(driver, 60)
+        # chrome options
+        chromeService = Service(pathMainDir + "/chromedriver.exe")
+        chromeOptions = webdriver.ChromeOptions()
+        chromeOptions.add_experimental_option("debuggerAddress", "localhost:8989")
+        driver = webdriver.Chrome(service=chromeService, options=chromeOptions)
+        wait = WebDriverWait(driver, 60)
 
-    ###wait for methods
-    def wait_css_selector(code):
-        wait.until(
-            ExpectedConditions.presence_of_element_located((By.CSS_SELECTOR, code))
-        )
-        
-    def wait_css_selectorTest(code):
-        wait.until(
-            ExpectedConditions.elementToBeClickable((By.CSS_SELECTOR, code))
-        )    
+        # wait for methods
+        def waitCssSelectorRendered(code):
+            print('Searching for DOM element by selecor : ' + code)
+            time.sleep(1)
+            wait.until(ExpectedConditions.presence_of_element_located((By.CSS_SELECTOR, code)))
 
-    def wait_xpath(code):
-        wait.until(ExpectedConditions.presence_of_element_located((By.XPATH, code)))
+        def waitCssSelectorClickable(code):
+            print('Waiting for element selector to be visible and clickable : ' + code)
+            time.sleep(1)
+            wait.until(ExpectedConditions.elementToBeClickable((By.CSS_SELECTOR, code)))
 
+        def waitXpath(code):
+            print('Waiting for element selector to be rendered, added to DOM : ' + code)
+            time.sleep(1)
+            wait.until(ExpectedConditions.presence_of_element_located((By.XPATH, code)))
 
-    while end_num >= start_num:
-        print("Start creating NFT " +  loop_title + str(start_num))
-        driver.get(collection_link)
-        # time.sleep(3)
+        files = absoluteFilePaths()
+        for fileAbsolutePathName in files:
+            print("Start creating NFT " + fileAbsolutePathName)
+            driver.get(collectionLink)
+            time.sleep(3)
 
-        wait_xpath('//*[@id="__next"]/div[1]/main/div/div/div[1]/span/a')
-        additem = driver.find_element_by_xpath('//*[@id="__next"]/div[1]/main/div/div/div[1]/span/a')
-        additem.click()
-        time.sleep(1)
+            waitXpath('//*[@id="__next"]/div[1]/main/div/div/div[1]/span/a')
+            createTab = driver.find_element(by=By.XPATH, value='//*[@id="__next"]/div[1]/main/div/div/div[1]/span/a')
+            createTab.click()
+            time.sleep(1)
 
-        wait_xpath('//*[@id="media"]')
-        imageUpload = driver.find_element_by_xpath('//*[@id="media"]')
-        imagePath = os.path.abspath(file_path + "\\" + str(start_num) + "." + loop_file_format)  # change folder here
-        imageUpload.send_keys(imagePath)
+            waitXpath('//*[@id="media"]')
+            imageUpload = driver.find_element(by=By.XPATH, value='//*[@id="media"]')
+            imageUpload.send_keys(fileAbsolutePathName)
 
-        name = driver.find_element_by_xpath('//*[@id="name"]')
-        name.send_keys(loop_title + str(start_num))  # +1000 for other folders #change name before "#"
-        time.sleep(0.5)
+            inputName = driver.find_element(by=By.XPATH, value='//*[@id="name"]')
+            inputName.send_keys(randomStringOfLength())
+            time.sleep(1)
 
-        ext_link = driver.find_element_by_xpath('//*[@id="external_link"]')
-        ext_link.send_keys(loop_external_link)
-        time.sleep(0.5)
+            inputExternalLink = driver.find_element(by=By.XPATH, value='//*[@id="external_link"]')
+            inputExternalLink.send_keys(loopExternalLink)
+            time.sleep(1)
 
-        desc = driver.find_element_by_xpath('//*[@id="description"]')
-        desc.send_keys(loop_description)
-        time.sleep(0.5)
+            inputDescription = driver.find_element(by=By.XPATH, value='//*[@id="description"]')
+            inputDescription.send_keys(loopDdescription)
+            time.sleep(1)
 
-        # Select Polygon blockchain if applicable
-        if is_polygon.get():
-            blockchain_button = driver.find_element(By.XPATH, '//*[@id="__next"]/div[1]/main/div/div/section/div/form/div[7]/div/div[2]')
-            blockchain_button.click()
-            polygon_button_location = '//span[normalize-space() = "Mumbai"]'
-            wait.until(ExpectedConditions.presence_of_element_located(
-                (By.XPATH, polygon_button_location)))
-            polygon_button = driver.find_element(
-                By.XPATH, polygon_button_location)
-            polygon_button.click()
+            btnCreateNFT = driver.find_element(by=By.XPATH, value='//*[@id="__next"]/div[1]/main/div/div/section/div[2]/form/div/div[1]/span/button')
+            driver.execute_script("arguments[0].click();", btnCreateNFT)
+            time.sleep(1)
 
-        create = driver.find_element_by_xpath('//*[@id="__next"]/div[1]/main/div/div/section/div[2]/form/div/div[1]/span/button')
-        driver.execute_script("arguments[0].click();", create)
-        time.sleep(1)
+            waitCssSelectorRendered("i[aria-label='Close']")
+            modalCloseIco = driver.find_element(by=By.CSS_SELECTOR, value="i[aria-label='Close']")
+            modalCloseIco.click()
+            time.sleep(1)
 
-        wait_css_selector("i[aria-label='Close']")
-        cross = driver.find_element_by_css_selector("i[aria-label='Close']")
-        cross.click()
-        time.sleep(1)
+            main_page = driver.current_window_handle
 
-        main_page = driver.current_window_handle
-        wait_xpath('//*[@id="__next"]/div[1]/main/div/div/div[1]/div/span[2]/a')
-        sell = driver.find_element_by_xpath('//*[@id="__next"]/div[1]/main/div/div/div[1]/div/span[2]/a')
-        sell.click()
+            waitXpath('//*[@id="__next"]/div[1]/main/div/div/div[1]/div/span[2]/a')
+            sellBtn = driver.find_element(by=By.XPATH, value='//*[@id="__next"]/div[1]/main/div/div/div[1]/div/span[2]/a')
+            sellBtn.click()
 
-        wait_css_selector("input[placeholder='Amount']")
-        amount = driver.find_element_by_css_selector("input[placeholder='Amount']")
-        amount.send_keys(str(loop_price))
+            waitCssSelectorRendered("input[placeholder='Amount']")
+            amountInputField = driver.find_element(by=By.CSS_SELECTOR, value="input[placeholder='Amount']")
+            amountInputField.send_keys(str(loopPrice))
 
-        wait_css_selector("button[type='submit']")
-        listing = driver.find_element_by_css_selector("button[type='submit']")
-        listing.click()
-        time.sleep(5)
-        
-        wait_css_selector("button[class='Blockreact__Block-sc-1xf18x6-0 Buttonreact__StyledButton-sc-glfma3-0 bhqEJb fzwDgL']")
-        sign = driver.find_element_by_css_selector("button[class='Blockreact__Block-sc-1xf18x6-0 Buttonreact__StyledButton-sc-glfma3-0 bhqEJb fzwDgL']")
-        sign.click()
-        time.sleep(2)
-        
-        for handle in driver.window_handles:
-            if handle != main_page:
-                login_page = handle
-        # change the control to signin page
-        driver.switch_to.window(login_page)
-        wait_css_selector("button[data-testid='request-signature__sign']")
-        sign = driver.find_element_by_css_selector("button[data-testid='request-signature__sign']")
-        sign.click()
-        time.sleep(1)
-        
-        # change control to main page
-        driver.switch_to.window(main_page)
-        time.sleep(1)
+            waitCssSelectorRendered("button[type='submit']")
+            submitSellBtn = driver.find_element(by=By.CSS_SELECTOR, value="button[type='submit']")
+            submitSellBtn.click()
+            time.sleep(5)
 
-        start_num = start_num + 1
-        print('NFT creation completed!')
+            waitCssSelectorRendered("button[class='Blockreact__Block-sc-1xf18x6-0 Buttonreact__StyledButton-sc-glfma3-0 bhqEJb kCijbX']")
+            signSell = driver.find_element(by=By.CSS_SELECTOR, value="button[class='Blockreact__Block-sc-1xf18x6-0 Buttonreact__StyledButton-sc-glfma3-0 bhqEJb kCijbX']")
+            signSell.click()
+            time.sleep(2)
+
+            for handle in driver.window_handles:
+                if handle != main_page:
+                    login_page = handle
+
+            # change the control to signin page
+            driver.switch_to.window(login_page)
+
+            waitCssSelectorRendered("button[data-testid='request-signature__sign']")
+            sign2 = driver.find_element(by=By.CSS_SELECTOR, value="button[data-testid='request-signature__sign']")
+            sign2.click()
+            time.sleep(1)
+
+            # change control to main page
+            driver.switch_to.window(main_page)
+            time.sleep(1)
+
+            removeFile(fileAbsolutePathName)
+
+            print('=======================')
+            print('======================= NFT uploads finished! =======================')
+            print('=======================')
+
+    except Exception as Error:
+        writeLog(Error)
+        time.sleep(15)
+        main()
+
 
 #####BUTTON ZONE#######
-button_save = tkinter.Button(root, width=20, text="Save Form", command=save) 
+button_save = tkinter.Button(rootWindow, width=20, text="Save Form", command=save)
 button_save.grid(row=23, column=1)
-button_start = tkinter.Button(root, width=20, bg="green", fg="white", text="Start", command=main_program_loop)
+button_start = tkinter.Button(rootWindow, width=20, bg="green", fg="white", text="Start", command=main)
 button_start.grid(row=25, column=1)
-isPolygon = tkinter.Checkbutton(root, text='Polygon Blockchain', var=is_polygon)
-isPolygon.grid(row=20, column=0)
-open_browser = tkinter.Button(root, width=20,  text="Open Chrome Browser", command=open_chrome_profile)
+open_browser = tkinter.Button(rootWindow, width=20,  text="Open Chrome Browser", command=openChromeProfile)
 open_browser.grid(row=22, column=1)
-upload_folder_input_button = tkinter.Button(root, width=20, text="Add NFTs Upload Folder", command=upload_folder_input)
+upload_folder_input_button = tkinter.Button(rootWindow, width=20, text="Add NFTs Folder", command=initNFTFolderPath)
 upload_folder_input_button.grid(row=21, column=1)
+
 try:
-    with open(save_file_path(), "rb") as infile:
+    with open(saveFormFilePath(), "rb") as infile:
         new_dict = pickle.load(infile)
-        global upload_path
-        Name_change_img_folder_button(new_dict[0])
-        upload_path = new_dict[0]
-except FileNotFoundError:
+        global pathNFTFolder
+        updateNFTFolderPath(new_dict[0])
+        pathNFTFolder = new_dict[0]
+except Exception as Error:
+    writeLog(Error)
+    time.sleep(30)
     pass
 #####BUTTON ZONE END#######
-root.mainloop()
+
+rootWindow.mainloop()
